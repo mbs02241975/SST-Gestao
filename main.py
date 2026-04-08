@@ -5,7 +5,7 @@ import pandas as pd
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="SST OS Pro", page_icon="🛡️", layout="wide")
 
-# --- ESTADO GLOBAL ---
+# --- ESTADO GLOBAL (Persistência na Sessão) ---
 if 'autenticado' not in st.session_state:
     st.session_state.update({
         'autenticado': False,
@@ -16,104 +16,160 @@ if 'autenticado' not in st.session_state:
         'ai_key': ''
     })
 
-# --- FUNÇÃO DE LOGIN MELHORADA ---
+# --- FUNÇÃO DE LOGIN ---
 def login_sistema():
-    st.sidebar.title("🔐 Acesso ao Sistema")
-    u_input = st.sidebar.text_input("Usuário")
-    p_input = st.sidebar.text_input("Senha", type="password")
-    
-    if st.sidebar.button("Entrar"):
-        # Dicionário de usuários (Posteriormente você pode ler da aba T_USR)
-        usuarios = {
-            "desenvolvedor": {"senha": "Mm88918675@@", "nivel": 3, "nome": "Desenvolvedor"},
-            "tst01": {"senha": "123", "nivel": 2, "nome": "Técnico de Campo"},
-            "gestor": {"senha": "999", "nivel": 1, "nome": "Gerente de Operações"}
-        }
+    with st.sidebar:
+        st.title("🔐 Acesso SST")
+        u_input = st.text_input("Usuário")
+        p_input = st.text_input("Senha", type="password")
         
-        if u_input in usuarios and usuarios[u_input]["senha"] == p_input:
-            st.session_state.update({
-                'autenticado': True,
-                'user_nome': usuarios[u_input]["nome"],
-                'nivel': usuarios[u_input]["nivel"]
-            })
-            st.sidebar.success(f"Logado como {usuarios[u_input]['nome']}")
-            st.rerun()
-        else:
-            st.sidebar.error("Usuário ou senha incorretos.")
+        if st.button("Entrar"):
+            # Credenciais definidas conforme conversamos
+            usuarios = {
+                "dev": {"senha": "adm", "nivel": 3, "nome": "Desenvolvedor"},
+                "tst01": {"senha": "123", "nivel": 2, "nome": "Técnico de Campo"},
+                "gestor": {"senha": "999", "nivel": 1, "nome": "Gerente Geral"}
+            }
+            
+            if u_input in usuarios and usuarios[u_input]["senha"] == p_input:
+                st.session_state.update({
+                    'autenticado': True,
+                    'user_nome': usuarios[u_input]["nome"],
+                    'nivel': usuarios[u_input]["nivel"]
+                })
+                st.rerun()
+            else:
+                st.error("Usuário/Senha inválidos")
 
-# Execução do Login
 if not st.session_state.autenticado:
     login_sistema()
-    st.info("Por favor, faça login na barra lateral para acessar as ferramentas de segurança.")
+    st.info("Acesse com seu usuário para liberar o sistema.")
     st.stop()
 
-# --- MENU DINÂMICO POR NÍVEL ---
-# Nível 1 vê apenas Home. Nível 2 vê Home, Inspeções e EPI. Nível 3 vê tudo.
+# --- NAVEGAÇÃO DINÂMICA ---
 opcoes = ["🏠 Home"]
 if st.session_state.nivel >= 2:
-    opcoes.extend(["📝 Inspeções", "📦 Entrega de EPI"])
+    opcoes.extend(["📝 Inspeções (NRs)", "📦 Entrega de EPI"])
 if st.session_state.nivel == 3:
     opcoes.append("🛠️ Configurações Dev")
 
-escolha = st.sidebar.radio("Navegar", opcoes)
-st.sidebar.divider()
-if st.sidebar.button("Sair"):
-    st.session_state.autenticado = False
-    st.rerun()
+with st.sidebar:
+    st.write(f"👤 **{st.session_state.user_nome}**")
+    escolha = st.radio("Navegar", opcoes)
+    st.divider()
+    if st.button("Sair"):
+        st.session_state.autenticado = False
+        st.rerun()
 
-# --- FUNÇÃO DE PERSISTÊNCIA ---
-def salvar_dados(aba, nova_linha):
+# --- FUNÇÃO DE GRAVAÇÃO (SEM GOOGLE CLOUD / PEM) ---
+def salvar_registro(aba, dados_dicionario):
     if not st.session_state.config_url:
-        st.error("Configurações de banco de dados ausentes.")
+        st.error("Erro: Configure a URL da Planilha no painel Dev primeiro!")
         return
     try:
+        # Conexão simplificada para planilha pública (Editor)
         conn = st.connection("gsheets", type=GSheetsConnection)
-        df_antigo = conn.read(spreadsheet=st.session_state.config_url, worksheet=aba)
-        df_novo = pd.concat([df_antigo, pd.DataFrame([nova_linha])], ignore_index=True)
+        df_atual = conn.read(spreadsheet=st.session_state.config_url, worksheet=aba)
+        df_novo = pd.concat([df_atual, pd.DataFrame([dados_dicionario])], ignore_index=True)
         conn.update(spreadsheet=st.session_state.config_url, worksheet=aba, data=df_novo)
+        st.success("✅ Registro enviado para a planilha!")
         st.balloons()
-        st.success("Dados registrados com sucesso!")
     except Exception as e:
-        st.error(f"Erro ao salvar: {e}")
+        st.error(f"Falha na conexão: {e}. Verifique se a planilha está como 'Editor' para qualquer pessoa com o link.")
 
 # --- TELAS ---
 
+# 1. HOME
 if escolha == "🏠 Home":
-    st.title(f"Bem-vindo, {st.session_state.user_nome}!")
-    st.write("---")
+    st.title(f"Olá, {st.session_state.user_nome}!")
+    st.write("Sistema de Gestão de Segurança do Trabalho - Visão Geral")
+    
     c1, c2, c3 = st.columns(3)
-    c1.metric("Status do Sistema", "ONLINE")
-    c2.metric("Sua Permissão", f"Nível {st.session_state.nivel}")
-    c3.metric("Banco de Dados", "Conectado" if st.session_state.config_id else "Pendente")
+    with c1:
+        st.metric("Status do Banco", "✅ OK" if st.session_state.config_id else "⚠️ Pendente")
+    with c2:
+        st.metric("Nível de Acesso", f"Lvl {st.session_state.nivel}")
+    with c3:
+        st.metric("IA Engine", "Ativa" if st.session_state.ai_key else "Inativa")
 
-elif escolha == "📝 Inspeções":
-    st.title("Inspeções de Segurança")
-    if st.session_state.nivel < 2:
-        st.error("Seu nível não permite registros.")
-    else:
-        with st.form("ins_form"):
-            c1, c2 = st.columns(2)
-            id_i = c1.text_input("Cód", placeholder="I01")
-            local = c2.text_input("Setor")
-            status = st.radio("Conformidade", ["C", "N"])
-            obs = st.text_area("Observações")
-            if st.form_submit_button("Salvar Registro"):
-                salvar_dados("T_INS", {"id": id_i, "dt": pd.Timestamp.now().strftime('%d/%m/%Y'), "lc": local, "st": status, "ob": obs})
+# 2. INSPEÇÕES COM PLANO DE AÇÃO
+elif escolha == "📝 Inspeções (NRs)":
+    st.title("📝 Inspeção e Plano de Ação")
+    
+    with st.form("form_inspecao"):
+        col1, col2 = st.columns(2)
+        id_i = col1.text_input("ID", placeholder="I01", max_chars=4)
+        local = col2.text_input("Local da Inspeção")
+        status = st.selectbox("Status de Conformidade", ["C", "N"], help="C=Conforme / N=Não Conforme")
+        
+        st.divider()
+        st.subheader("📋 Detalhes e Plano de Ação")
+        obs = st.text_area("Descreva a situação encontrada")
+        
+        # Só exibe campos de plano de ação se houver Não Conformidade
+        plano = ""
+        prazo = ""
+        if status == "N":
+            st.warning("⚠️ Atenção: Descreva as medidas corretivas abaixo.")
+            plano = st.text_input("Plano de Ação (O que fazer?)")
+            prazo = st.date_input("Prazo para correção")
+        
+        if st.form_submit_button("Finalizar e Gravar"):
+            dados = {
+                "id": id_i,
+                "dt": pd.Timestamp.now().strftime('%d/%m/%Y'),
+                "lc": local,
+                "st": status,
+                "ob": f"{obs} | Plano: {plano} | Prazo: {prazo}" if status == "N" else obs
+            }
+            salvar_registro("T_INS", dados)
 
+# 3. ENTREGA DE EPI
 elif escolha == "📦 Entrega de EPI":
-    st.title("Controle de EPIs")
-    if st.session_state.nivel < 2:
-        st.error("Acesso restrito.")
-    else:
-        with st.form("epi_form"):
-            id_e = st.text_input("ID", placeholder="E01")
-            colab = st.text_input("Colaborador")
-            ca = st.text_input("CA")
-            if st.form_submit_button("Registrar Entrega"):
-                salvar_dados("T_EPI", {"id": id_e, "cb": colab, "ca": ca, "de": pd.Timestamp.now().strftime('%d/%m/%Y')})
+    st.title("📦 Registro de Entrega (NR-06)")
+    with st.form("form_epi"):
+        id_e = st.text_input("Cód. Entrega", placeholder="E01")
+        colab = st.text_input("Nome do Colaborador")
+        ca = st.text_input("Número do CA")
+        if st.form_submit_button("Registrar Entrega"):
+            dados_epi = {
+                "id": id_e,
+                "cb": colab,
+                "ca": ca,
+                "de": pd.Timestamp.now().strftime('%d/%m/%Y')
+            }
+            salvar_registro("T_EPI", dados_epi)
 
+# 4. CONFIGURAÇÕES DEV (Com Botão de Salvar)
 elif escolha == "🛠️ Configurações Dev":
-    st.title("Painel Administrativo")
-    st.session_state.config_url = st.text_input("URL da Planilha", value=st.session_state.config_url)
-    st.session_state.config_id = st.text_input("ID da Planilha", value=st.session_state.config_id)
-    st.session_state.ai_key = st.text_input("Chave API IA", value=st.session_state.ai_key, type="password")
+    st.title("🛠️ Painel de Configurações Técnicas")
+    st.info("Insira os dados abaixo para vincular o app à sua planilha.")
+    
+    with st.form("form_config"):
+        url_input = st.text_input("URL da Planilha Google (Modo Editor)", value=st.session_state.config_url)
+        id_input = st.text_input("ID da Planilha (opcional para log)", value=st.session_state.config_id)
+        ia_input = st.text_input("Chave API da IA", value=st.session_state.ai_key, type="password")
+        
+        if st.form_submit_button("💾 Salvar Configurações"):
+            st.session_state.config_url = url_input
+            st.session_state.config_id = id_input
+            st.session_state.ai_key = ia_input
+            st.success("Configurações salvas com sucesso para esta sessão!")
+            st.rerun()
+
+    st.divider()
+    st.subheader("📂 Estrutura SQL (Apps Script)")
+    st.code("""
+function setupSST() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tabelas = {
+    "T_USR": ["id", "nm", "lg", "sh", "nv"],
+    "T_INS": ["id", "dt", "lc", "st", "ob"],
+    "T_EPI": ["id", "cb", "ca", "de"]
+  };
+  for (var n in tabelas) {
+    var aba = ss.getSheetByName(n) || ss.insertSheet(n);
+    aba.getRange(1, 1, 1, tabelas[n].length).setValues([tabelas[n]]);
+  }
+}
+    """, language="javascript")
