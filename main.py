@@ -1,88 +1,102 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# --- ESTADO DA SESSÃO ---
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="SST OS Pro", page_icon="🛡️", layout="wide")
+
+# --- ESTADO GLOBAL ---
 if 'autenticado' not in st.session_state:
     st.session_state.update({
         'autenticado': False,
         'nivel': 0,
-        'config_id': '',
         'config_url': '',
+        'config_id': '',
         'ai_key': ''
     })
 
-# --- FUNÇÃO DE LOGIN ---
-def realizar_login():
-    st.sidebar.title("🔐 Acesso SST")
-    usuario = st.sidebar.text_input("Usuário")
-    senha = st.sidebar.text_input("Senha", type="password")
-    
-    if st.sidebar.button("Entrar"):
-        # Lógica de exemplo (Pode ser validada via Google Sheets depois)
-        if usuario == "dev" and senha == "suasenha":
-            st.session_state.autenticado = True
-            st.session_state.nivel = 3 # Nível Desenvolvedor
-            st.success("Bem-vindo, Desenvolvedor!")
-        elif usuario == "tst" and senha == "123":
-            st.session_state.autenticado = True
-            st.session_state.nivel = 2 # Nível Técnico
-        st.rerun()
+# --- LOGIN (Sidebar) ---
+with st.sidebar:
+    if not st.session_state.autenticado:
+        st.title("🔐 Acesso")
+        u = st.text_input("Usuário")
+        p = st.text_input("Senha", type="password")
+        if st.button("Entrar"):
+            if u == "dev" and p == "admin": # Altere aqui suas credenciais
+                st.session_state.update({'autenticado': True, 'nivel': 3})
+                st.rerun()
+    else:
+        st.write(f"Usuário logado (Nível {st.session_state.nivel})")
+        if st.button("Sair"):
+            st.session_state.autenticado = False
+            st.rerun()
 
 if not st.session_state.autenticado:
-    realizar_login()
+    st.warning("Acesse com seu usuário e senha na lateral.")
     st.stop()
 
-# --- MENU LATERAL ---
+# --- MENU ---
 menu = ["Home", "Inspeções (NRs)", "Entrega de EPI"]
 if st.session_state.nivel == 3:
     menu.append("🛠️ Configurações Dev")
 
 escolha = st.sidebar.radio("Navegar", menu)
 
-# --- TELA: CONFIGURAÇÕES DEV ---
-if escolha == "🛠️ Configurações Dev":
-    st.header("Painel de Controle do Desenvolvedor")
-    
-    with st.expander("🔗 Configuração de Conexão (Google Sheets)", expanded=True):
-        st.session_state.config_url = st.text_input("URL da Planilha", value=st.session_state.config_url)
-        st.session_state.config_id = st.text_input("ID da Planilha", value=st.session_state.config_id)
-        
-    with st.expander("🤖 Inteligência Artificial", expanded=True):
-        st.session_state.ai_key = st.text_input("API KEY (IA)", value=st.session_state.ai_key, type="password")
+# --- FUNÇÃO PARA SALVAR (SQL-Like) ---
+def salvar_dados(aba, nova_linha):
+    if not st.session_state.config_url:
+        st.error("Erro: URL da planilha não configurada no Painel Dev!")
+        return
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        # Lê dados atuais
+        df_antigo = conn.read(spreadsheet=st.session_state.config_url, worksheet=aba)
+        # Adiciona nova linha
+        df_novo = pd.concat([df_antigo, pd.DataFrame([nova_linha])], ignore_index=True)
+        # Atualiza a planilha
+        conn.update(spreadsheet=st.session_state.config_url, worksheet=aba, data=df_novo)
+        st.success("Dados enviados com sucesso para a planilha!")
+    except Exception as e:
+        st.error(f"Erro de conexão: {e}")
 
-    with st.expander("📄 Estrutura SQL (Apps Script)", expanded=False):
-        st.info("Copie este código para a extensão Apps Script da sua planilha:")
-        sql_template = f"""
-/* Criação das tabelas com IDs reduzidos 
-T_USR (id, nm, lg, sh, nv)
-T_INS (id, dt, lc, st, ob)
-*/
-function setup() {{
-  // Script gerado para URL: {st.session_state.config_url}
-  // Execute a função inicializarBancoSST() no console do Google.
-}}
-        """
-        st.code(sql_template, language="javascript")
-    
-    if st.button("Aplicar Alterações"):
-        st.toast("Configurações atualizadas com sucesso!")
+# --- TELAS ---
 
-# --- TELA: INSPEÇÕES ---
-elif escolha == "Inspeções (NRs)":
-    st.header("Registro de Inspeção Diária")
+if escolha == "Home":
+    st.title("🏠 Painel de Controle SST")
+    st.markdown(f"""
+    Bem-vindo ao sistema de gestão.
+    * **Status da Conexão:** {"✅ Conectado" if st.session_state.config_id else "❌ Não Configurado"}
+    * **ID da Planilha:** `{st.session_state.config_id}`
+    """)
+    
     col1, col2 = st.columns(2)
-    
-    with col1:
-        # IDs reduzidos para economizar espaço
-        id_ins = st.text_input("Cód. Inspeção", max_chars=4, placeholder="I01")
-        local = st.selectbox("Local", ["Canteiro A", "Almoxarifado", "Escritório"])
-        
-    with col2:
-        status = st.radio("Status de Conformidade", ["C", "N"]) # C: Conforme / N: Não Conforme
-        data = st.date_input("Data")
+    col1.metric("Inspeções este mês", "0")
+    col2.metric("EPIs Pendentes", "0")
 
-    obs = st.text_area("Observações (Breve)")
-    
-    if st.button("Salvar na Planilha"):
-        # Aqui entra a lógica st.connection utilizando as variáveis do estado da sessão
-        st.success(f"Registro {id_ins} enviado para {st.session_state.config_id}")
+elif escolha == "Inspeções (NRs)":
+    st.title("📝 Registro de Inspeções")
+    with st.form("form_ins"):
+        c1, c2 = st.columns(2)
+        id_i = c1.text_input("ID", placeholder="I01")
+        local = c2.text_input("Local/Setor")
+        status = st.selectbox("Status", ["C", "N"], help="C=Conforme, N=Não Conforme")
+        obs = st.text_area("Observações")
+        if st.form_submit_button("Gravar Inspeção"):
+            salvar_dados("T_INS", {"id": id_i, "dt": pd.Timestamp.now().strftime('%d/%m/%Y'), "lc": local, "st": status, "ob": obs})
+
+elif escolha == "Entrega de EPI":
+    st.title("📦 Controle de Entrega de EPI")
+    with st.form("form_epi"):
+        c1, c2 = st.columns(2)
+        id_e = c1.text_input("ID Registro", placeholder="E01")
+        colab = c2.text_input("Nome do Colaborador")
+        ca = st.text_input("CA do Equipamento")
+        if st.form_submit_button("Confirmar Entrega"):
+            salvar_dados("T_EPI", {"id": id_e, "cb": colab, "ca": ca, "de": pd.Timestamp.now().strftime('%d/%m/%Y')})
+
+elif escolha == "🛠️ Configurações Dev":
+    st.title("🛠️ Configurações do Sistema")
+    st.session_state.config_url = st.text_input("URL completa da Planilha", value=st.session_state.config_url)
+    st.session_state.config_id = st.text_input("ID da Planilha", value=st.session_state.config_id)
+    st.session_state.ai_key = st.text_input("Chave API IA", value=st.session_state.ai_key, type="password")
+    st.info("As configurações acima são mantidas enquanto o app estiver aberto.")
