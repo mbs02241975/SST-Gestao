@@ -26,7 +26,7 @@ def login_sistema():
         if st.button("Entrar"):
             # Credenciais definidas conforme conversamos
             usuarios = {
-                "dev": {"senha": "adm", "nivel": 3, "nome": "Desenvolvedor"},
+                "desenvolvedor": {"senha": "Mm88918675@@", "nivel": 3, "nome": "Desenvolvedor"},
                 "tst01": {"senha": "123", "nivel": 2, "nome": "Técnico de Campo"},
                 "gestor": {"senha": "999", "nivel": 1, "nome": "Gerente Geral"}
             }
